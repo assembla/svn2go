@@ -211,7 +211,7 @@ func (r *Repo) History(path string, start, end int64, limit int) ([]*Commit, err
 }
 
 // Return an array with directory entries
-func (r *Repo) Tree(path string, rev int64) ([]*DirEntry, error) {
+func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 	var revisionRoot *C.svn_fs_root_t
 
 	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); err != nil {
@@ -228,7 +228,7 @@ func (r *Repo) Tree(path string, rev int64) ([]*DirEntry, error) {
 		return nil, makeError(err)
 	}
 
-	rez := make([]*DirEntry, C.apr_hash_count(entries))
+	rez := make([]DirEntry, C.apr_hash_count(entries))
 	i := 0
 
 	for hi := C.apr_hash_first(r.pool, entries); hi != nil; hi = C.apr_hash_next(hi) {
@@ -239,7 +239,7 @@ func (r *Repo) Tree(path string, rev int64) ([]*DirEntry, error) {
 
 		C.apr_hash_this(hi, nil, nil, &val)
 		entry = (*C.svn_fs_dirent_t)(val)
-		rez[i] = &DirEntry{C.GoString(entry.name), int(entry.kind)}
+		rez[i] = DirEntry{C.GoString(entry.name), int(entry.kind)}
 		i++
 	}
 
