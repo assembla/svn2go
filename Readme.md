@@ -9,3 +9,9 @@ You will need libsvn-dev on Ubuntu/Debian or subversion installed with `brew` on
     go get github.com/Assembla/svn2go
 
 See svn_test.go for usage.
+
+#TODO
+
+* Make private svn callbacks
+* Do not use pointer in slices, they already are
+* Add Export for svnadmin export command
