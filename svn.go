@@ -32,7 +32,6 @@ package svn
 #include <svn_utf.h>
 #include <svn_props.h>
 
-extern void init_fs_config(apr_hash_t *fsConfig);
 extern apr_array_header_t * GoCreateAprArrayForPath(const char *path, apr_pool_t *pool);
 extern apr_array_header_t * GoDefaultLogProps(apr_pool_t *pool);
 extern svn_error_t * Go_svn_repos_get_logs4(svn_repos_t *repos,
@@ -270,28 +269,4 @@ func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
 	}
 
 	return &SvnStream{stream}, nil
-}
-
-// Create a repository
-// If we will copy from the template, set new uuid: err := C.svn_fs_set_uuid(r.fs, nil, r.pool)
-func Create(path string) error {
-	var (
-		err   *C.svn_error_t
-		repos *C.svn_repos_t
-	)
-
-	cstr := C.CString(path)
-	defer C.free(unsafe.Pointer(cstr))
-	pool := C.svn_pool_create_ex(globalPool, nil)
-	defer C.svn_pool_destroy(pool)
-
-	var fsConfig *C.apr_hash_t = C.apr_hash_make(pool)
-	C.init_fs_config(fsConfig)
-	err = C.svn_repos_create(&repos, cstr, nil, nil, nil, fsConfig, pool)
-
-	if err != nil {
-		return makeError(err)
-	}
-
-	return nil
 }
