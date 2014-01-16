@@ -35,7 +35,7 @@ type DirEntry struct {
 }
 
 type CommitCollector struct {
-	commits []*Commit
+	commits []Commit
 	limit   int
 	r       *Repo
 }

@@ -22,7 +22,7 @@ func LogEntryReceiverCallback(_obj, _entry, _pool unsafe.Pointer) unsafe.Pointer
 
 	var author, date, msg *C.char
 	C.svn_compat_log_revprops_out(&author, &date, &msg, entry.revprops)
-	commit := &Commit{int64(entry.revision), C.GoString(author), C.GoString(date), C.GoString(msg)}
+	commit := Commit{int64(entry.revision), C.GoString(author), C.GoString(date), C.GoString(msg)}
 	baton.commits = append(baton.commits, commit)
 	return nil
 }
@@ -35,7 +35,7 @@ func HistoryReceiverCallback(_obj unsafe.Pointer, path *C.char, revision C.svn_r
 		log.Println(err)
 		return nil // ignore
 	} else {
-		baton.commits = append(baton.commits, commit)
+		baton.commits = append(baton.commits, *commit)
 
 		if len(baton.commits) >= baton.limit {
 			return C.svn_error_create(C.SVN_ERR_CEASE_INVOCATION, nil, nil)

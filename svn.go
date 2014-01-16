@@ -170,8 +170,8 @@ func freeCRam(repo interface{}) {
 }
 
 // List repository revisions
-func (r *Repo) Commits(start, end int64) ([]*Commit, error) {
-	baton := &CommitCollector{commits: make([]*Commit, 0)}
+func (r *Repo) Commits(start, end int64) ([]Commit, error) {
+	baton := &CommitCollector{commits: make([]Commit, 0)}
 
 	err := C.Go_svn_repos_get_logs4(r.repos,
 		nil,
@@ -193,10 +193,10 @@ func (r *Repo) Commits(start, end int64) ([]*Commit, error) {
 }
 
 // Returns commits that changed @path
-func (r *Repo) History(path string, start, end int64, limit int) ([]*Commit, error) {
+func (r *Repo) History(path string, start, end int64, limit int) ([]Commit, error) {
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
-	baton := &CommitCollector{commits: make([]*Commit, 0), limit: limit, r: r}
+	baton := &CommitCollector{commits: make([]Commit, 0), limit: limit, r: r}
 
 	err := C.Go_repos_history(r.fs, cpath, unsafe.Pointer(baton),
 		C.svn_revnum_t(start),
