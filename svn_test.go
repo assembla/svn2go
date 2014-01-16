@@ -54,6 +54,14 @@ func TestBasic(t *testing.T) {
 		}
 	}
 
+	rev, err = r.LastPathRev("trunk/Makefile", 6)
+
+	if err != nil {
+		t.Error("failed to get rev", err)
+	} else if rev != 5 {
+		t.Error("Extected rev 5, got", rev)
+	}
+
 	commits, err = r.History("trunk", 0, rev, 2)
 
 	if err != nil {

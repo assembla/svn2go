@@ -242,9 +242,6 @@ func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 		i++
 	}
 
-	// TODO if we want also last change rev per entry,
-	//we will use svn_fs_node_created_rev(committed_rev, root, path, pool)
-
 	return rez, nil
 }
 
@@ -269,4 +266,27 @@ func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
 	}
 
 	return &SvnStream{stream}, nil
+}
+
+// Returns latest revision for the path
+func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
+	var (
+		revisionRoot *C.svn_fs_root_t
+		rev          C.svn_revnum_t
+	)
+	// TODO if we want also last change rev per entry,
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), r.pool); e != nil {
+		return -1, makeError(e)
+	} else {
+		defer C.svn_fs_close_root(revisionRoot)
+	}
+
+	cpath := C.CString(path) // convert to C string
+	defer C.free(unsafe.Pointer(cpath))
+
+	if err := C.svn_fs_node_created_rev(&rev, revisionRoot, cpath, r.pool); err != nil {
+		return -1, makeError(err)
+	}
+
+	return int64(rev), nil
 }

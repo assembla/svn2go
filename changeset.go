@@ -59,10 +59,14 @@ func (r *Repo) Changeset(rev int64) (*ChangesetInfo, error) {
 
 	if e := C.svn_fs_revision_root(&c.baseRoot, r.fs, C.svn_revnum_t(rev)-1, pool); e != nil {
 		return nil, makeError(e)
+	} else {
+		defer C.svn_fs_close_root(c.baseRoot)
 	}
 
 	if e := C.svn_fs_revision_root(&c.root, r.fs, C.svn_revnum_t(rev), pool); e != nil {
 		return nil, makeError(e)
+	} else {
+		defer C.svn_fs_close_root(c.root)
 	}
 
 	// TODO improvement: rewrite editor #open_file #open_directory to limit entries count that we will process.
