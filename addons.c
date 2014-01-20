@@ -113,8 +113,8 @@ svn_stream_t * CreateWriterStream(void *baton, apr_pool_t *pool) {
   return rez;
 }
 
-svn_error_t * FileMimeType(svn_string_t *mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool) {
-  SVN_ERR(svn_fs_node_prop(&mimetype, root, path, SVN_PROP_MIME_TYPE, pool));
+svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool) {
+  SVN_ERR(svn_fs_node_prop(mimetype, root, path, SVN_PROP_MIME_TYPE, pool));
   return SVN_NO_ERROR;
 }
 

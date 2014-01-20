@@ -88,9 +88,20 @@ func TestBasic(t *testing.T) {
 		exp := int64(1279)
 
 		if size != exp {
-			t.Error("Wrong file size, epected", exp, "got", size)
+			t.Error("Wrong file size, expected", exp, "got", size)
 		}
 	}
+
+	mimeExp := "application/octet-stream"
+
+	if mime, err := r.MimeType("trunk/images/play.png", 7); err != nil {
+		t.Fatal(err)
+	} else {
+		if mimeExp != mime {
+			t.Error("Wrong file mime type, expected", mimeExp, "got", mime)
+		}
+	}
+
 	if reader, err := r.FileContent("trunk/TODO", 6); err != nil {
 		t.Fatal(err)
 	} else {

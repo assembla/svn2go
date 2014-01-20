@@ -14,7 +14,7 @@ extern svn_error_t * Go_svn_repos_dir_delta2(svn_fs_root_t *src_root,
                      apr_pool_t *pool);
 extern svn_stream_t * CreateWriterStream(void *baton, apr_pool_t *pool);
 extern char * defaultEncoding();
-extern svn_error_t * FileMimeType(svn_string_t *mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
+extern svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
 */
 import "C"
 import (
@@ -297,7 +297,7 @@ func (s *stringBuffer) Write(p []byte) (int, error) {
 func (c *collector) isBinary(fsRoot *C.svn_fs_root_t, path *C.char) (bool, error) {
 	var mimetype *C.svn_string_t
 
-	if err := C.FileMimeType(mimetype, fsRoot, path, c.r.pool); err != nil {
+	if err := C.FileMimeType(&mimetype, fsRoot, path, c.r.pool); err != nil {
 		return true, makeError(err)
 	}
 

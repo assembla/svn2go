@@ -32,6 +32,7 @@ package svn
 #include <svn_utf.h>
 #include <svn_props.h>
 
+extern svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
 extern apr_array_header_t * GoCreateAprArrayForPath(const char *path, apr_pool_t *pool);
 extern apr_array_header_t * GoDefaultLogProps(apr_pool_t *pool);
 extern svn_error_t * Go_svn_repos_get_logs4(svn_repos_t *repos,
@@ -292,13 +293,13 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 }
 
 // Returns file size
-func (r *Repo) FileSize(path string, baseRev int64) (int64, error) {
+func (r *Repo) FileSize(path string, rev int64) (int64, error) {
 	var (
 		revisionRoot *C.svn_fs_root_t
 		size         C.svn_filesize_t
 	)
 
-	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), r.pool); e != nil {
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); e != nil {
 		return -1, makeError(e)
 	} else {
 		defer C.svn_fs_close_root(revisionRoot)
@@ -312,4 +313,33 @@ func (r *Repo) FileSize(path string, baseRev int64) (int64, error) {
 	}
 
 	return int64(size), nil
+}
+
+// Returns file mime type
+func (r *Repo) MimeType(path string, rev int64) (string, error) {
+	var (
+		mimetype     *C.svn_string_t
+		revisionRoot *C.svn_fs_root_t
+	)
+
+	mime := ""
+
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); e != nil {
+		return mime, makeError(e)
+	} else {
+		defer C.svn_fs_close_root(revisionRoot)
+	}
+
+	cpath := C.CString(path) // convert to C string
+	defer C.free(unsafe.Pointer(cpath))
+
+	if err := C.FileMimeType(&mimetype, revisionRoot, cpath, r.pool); err != nil {
+		return mime, makeError(err)
+	}
+
+	if mimetype != nil {
+		mime = C.GoString(mimetype.data)
+	}
+
+	return mime, nil
 }
