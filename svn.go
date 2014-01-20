@@ -274,7 +274,7 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 		revisionRoot *C.svn_fs_root_t
 		rev          C.svn_revnum_t
 	)
-	// TODO if we want also last change rev per entry,
+
 	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), r.pool); e != nil {
 		return -1, makeError(e)
 	} else {
@@ -289,4 +289,27 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 	}
 
 	return int64(rev), nil
+}
+
+// Returns file size
+func (r *Repo) FileSize(path string, baseRev int64) (int64, error) {
+	var (
+		revisionRoot *C.svn_fs_root_t
+		size         C.svn_filesize_t
+	)
+
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), r.pool); e != nil {
+		return -1, makeError(e)
+	} else {
+		defer C.svn_fs_close_root(revisionRoot)
+	}
+
+	cpath := C.CString(path) // convert to C string
+	defer C.free(unsafe.Pointer(cpath))
+
+	if e := C.svn_fs_file_length(&size, revisionRoot, cpath, r.pool); e != nil {
+		return -1, makeError(e)
+	}
+
+	return int64(size), nil
 }

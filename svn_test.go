@@ -82,6 +82,15 @@ func TestBasic(t *testing.T) {
 		t.Error("Only two entries should be in trunk/ folder at rev 5")
 	}
 
+	if size, err := r.FileSize("trunk/Makefile", 6); err != nil {
+		t.Fatal(err)
+	} else {
+		exp := int64(1279)
+
+		if size != exp {
+			t.Error("Wrong file size, epected", exp, "got", size)
+		}
+	}
 	if reader, err := r.FileContent("trunk/TODO", 6); err != nil {
 		t.Fatal(err)
 	} else {
