@@ -146,21 +146,30 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 		//log.Printf("%s '%s'\n", string(node.action), fullPath)
 	}
 
-	if node.kind == C.svn_node_file && node.action == 'R' {
+	if node.kind == C.svn_node_file {
+		var (
+			binaryA, binaryB bool
+			rootA, rootB     *C.svn_fs_root_t
+			rA, rB           int64
+			err              error
+		)
+
 		// TODO: use can use here go routines, because it calculates, limit go routines to N
 		header := fmt.Sprintf("Index: %s\n", fullPath)
 		header += "===================================================================\n"
 		cfullPath := C.CString(fullPath)
 		defer C.free(unsafe.Pointer(cfullPath))
 
-		binaryA, err := c.isBinary(c.baseRoot, cfullPath)
-		if err != nil {
-			return err
+		if node.action == 'R' || node.action == 'D' {
+			if binaryA, err = c.isBinary(c.baseRoot, cfullPath); err != nil {
+				return err
+			}
 		}
 
-		binaryB, err := c.isBinary(c.root, cfullPath)
-		if err != nil {
-			return err
+		if node.action == 'R' || node.action == 'A' {
+			if binaryB, err = c.isBinary(c.root, cfullPath); err != nil {
+				return err
+			}
 		}
 
 		stream := &stringBuffer{&entry.Diff} // Create string Writer
@@ -172,18 +181,25 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 		} else {
 			// Dump files and do diff
 			stream.Write([]byte(header))
-			//log.Println("Doing diff")
-			if node.copyfrom_path != nil {
-				// TODO get original file from copyfrom_path
-			}
 
 			// TODO check file size and do not dump files bigger than 10Mb for example
-			f1Path, err := c.dumpFile(c.baseRoot, fullPath)
+			rootA = c.baseRoot
+			rootB = c.root
+
+			if node.action == 'A' {
+				rootA = nil
+			}
+
+			if node.action == 'D' {
+				rootB = nil
+			}
+
+			f1Path, err := c.dumpFile(rootA, fullPath)
 			if err != nil {
 				return err
 			}
 
-			f2Path, err := c.dumpFile(c.root, fullPath)
+			f2Path, err := c.dumpFile(rootB, fullPath)
 			if err != nil {
 				return err
 			}
@@ -208,8 +224,12 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 
 			if C.svn_diff_contains_diffs(diff) == C.TRUE {
 				//log.Println("Has diff")
-				rA := C.svn_fs_revision_root_revision(c.baseRoot)
-				rB := C.svn_fs_revision_root_revision(c.root)
+				if rootA != nil {
+					rA = int64(C.svn_fs_revision_root_revision(rootA))
+				}
+				if rootB != nil {
+					rB = int64(C.svn_fs_revision_root_revision(rootB))
+				}
 				labelA := fmt.Sprintf("%s\t(revision %d)", fullPath, rA)
 				labelB := fmt.Sprintf("%s\t(revision %d)", fullPath, rB)
 				clabelA := C.CString(labelA)
@@ -223,8 +243,8 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 					C.defaultEncoding(), nil, C.FALSE, c.r.pool); err != nil {
 					return makeError(err)
 				}
-			} // end binary check
-		}
+			}
+		} // end binary check
 	} // end file diff
 
 	if node.prop_mod == C.TRUE {
@@ -267,19 +287,21 @@ func (c *collector) dumpFile(fsRoot *C.svn_fs_root_t, path string) (string, erro
 		return "", err
 	}
 
-	var stream *C.svn_stream_t
-	cpath := C.CString(path) // convert to C string
-	defer C.free(unsafe.Pointer(cpath))
+	if fsRoot != nil {
+		var stream *C.svn_stream_t
+		cpath := C.CString(path) // convert to C string
+		defer C.free(unsafe.Pointer(cpath))
 
-	if err := C.svn_fs_file_contents(&stream, fsRoot, cpath, c.r.pool); err != nil {
-		return "", makeError(err)
-	}
+		if err := C.svn_fs_file_contents(&stream, fsRoot, cpath, c.r.pool); err != nil {
+			return "", makeError(err)
+		}
 
-	_, err = io.Copy(tmp, &SvnStream{stream})
-	//log.Println("Dumped", n, "bytes")
+		_, err = io.Copy(tmp, &SvnStream{stream})
+		//log.Println("Dumped", n, "bytes")
 
-	if err != nil {
-		return "", fmt.Errorf("Can not dump %s:", path, err)
+		if err != nil {
+			return "", fmt.Errorf("Can not dump %s:", path, err)
+		}
 	}
 
 	if err = tmp.Close(); err != nil {

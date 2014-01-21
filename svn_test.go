@@ -136,12 +136,26 @@ func TestBasic(t *testing.T) {
 		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/Makefile"].Diff, diff)
 	}
 
-	// commit := ci.Commit
-	// log.Println("Rev:", commit.Rev, "Date:", commit.Date, "Author:", commit.Author)
-	// log.Println(commit.Log)
+	ci, err = r.Changeset(6)
 
-	// for key, value := range ci.ChangedPaths {
-	// 	log.Printf("%s %s %d\n", value.Action, key, value.Kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diff = `Index: trunk/TODO
+===================================================================
+--- trunk/TODO	(revision 0)
++++ trunk/TODO	(revision 6)
+@@ -0,0 +1 @@
++Readme
+`
+	if ci.ChangedPaths["trunk/TODO"].Diff != diff {
+		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/TODO"].Diff, diff)
+	}
+
+	// ci, err = r.Changeset(8)
+	// for path, value := range ci.ChangedPaths {
+	// 	log.Println(value.Action, path)
 	// 	log.Println(value.Diff)
 	// }
 }
