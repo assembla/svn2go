@@ -116,7 +116,7 @@ func TestBasic(t *testing.T) {
 		}
 	}
 
-	ci, err := r.Changeset(5)
+	ci, err := r.Changeset(5, false)
 
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestBasic(t *testing.T) {
 		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/Makefile"].Diff, diff)
 	}
 
-	ci, err = r.Changeset(6)
+	ci, err = r.Changeset(6, false)
 
 	if err != nil {
 		t.Fatal(err)
@@ -153,7 +153,22 @@ func TestBasic(t *testing.T) {
 		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/TODO"].Diff, diff)
 	}
 
-	// ci, err = r.Changeset(8)
+	ci, err = r.Changeset(9, true)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(ci.ChangedPaths["trunk/Makefile"].Diff) > 0 {
+		t.Errorf("Empty diff expected, but got \n%s", ci.ChangedPaths["trunk/Makefile"].Diff)
+	}
+
+	log := "White space change"
+
+	if ci.Commit.Log != log {
+		t.Errorf("Bad commit log message, expected '%s', got '%s'", log, ci.Commit.Log)
+	}
+
 	// for path, value := range ci.ChangedPaths {
 	// 	log.Println(value.Action, path)
 	// 	log.Println(value.Diff)

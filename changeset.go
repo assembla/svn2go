@@ -33,7 +33,7 @@ type ChangesetInfo struct {
 }
 
 // Returns changeset details: author, date, log, change files, dirs, diff of files and properties
-func (r *Repo) Changeset(rev int64) (*ChangesetInfo, error) {
+func (r *Repo) Changeset(rev int64, diffIgnoreSpace bool) (*ChangesetInfo, error) {
 	if rev == 0 {
 		return nil, fmt.Errorf("Invalid revision: %d", rev)
 	}
@@ -54,7 +54,7 @@ func (r *Repo) Changeset(rev int64) (*ChangesetInfo, error) {
 		editBaton unsafe.Pointer
 	)
 
-	c := &collector{r: r}
+	c := &collector{r: r, diffIgnoreSpace: diffIgnoreSpace}
 	c.changes = make(map[string]*ChangedEntry)
 
 	if e := C.svn_fs_revision_root(&c.baseRoot, r.fs, C.svn_revnum_t(rev)-1, pool); e != nil {
@@ -102,10 +102,11 @@ type ChangedEntry struct {
 }
 
 type collector struct {
-	baseRoot *C.svn_fs_root_t
-	root     *C.svn_fs_root_t
-	r        *Repo
-	changes  map[string]*ChangedEntry
+	baseRoot        *C.svn_fs_root_t
+	root            *C.svn_fs_root_t
+	r               *Repo
+	changes         map[string]*ChangedEntry
+	diffIgnoreSpace bool
 }
 
 // Used to collect file diff
@@ -179,9 +180,6 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 			header += "(Binary files differ)\n\n"
 			stream.Write([]byte(header))
 		} else {
-			// Dump files and do diff
-			stream.Write([]byte(header))
-
 			// TODO check file size and do not dump files bigger than 10Mb for example
 			rootA = c.baseRoot
 			rootB = c.root
@@ -213,16 +211,20 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 			cf2Path := C.CString(f2Path)
 			defer C.free(unsafe.Pointer(cf2Path))
 
-			cstream := C.CreateWriterStream(unsafe.Pointer(stream), c.r.pool)
-
 			var diff *C.svn_diff_t
 			opts := C.svn_diff_file_options_create(c.r.pool) // svn_diff_file_options_t *
+
+			if c.diffIgnoreSpace {
+				opts.ignore_space = C.svn_diff_file_ignore_space_all
+			}
 
 			if err := C.svn_diff_file_diff_2(&diff, cf1Path, cf2Path, opts, c.r.pool); err != nil {
 				return makeError(err)
 			}
 
 			if C.svn_diff_contains_diffs(diff) == C.TRUE {
+				stream.Write([]byte(header))
+
 				//log.Println("Has diff")
 				if rootA != nil {
 					rA = int64(C.svn_fs_revision_root_revision(rootA))
@@ -236,6 +238,8 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 				clabelB := C.CString(labelB)
 				defer C.free(unsafe.Pointer(clabelA))
 				defer C.free(unsafe.Pointer(clabelB))
+
+				cstream := C.CreateWriterStream(unsafe.Pointer(stream), c.r.pool)
 
 				if err := C.svn_diff_file_output_unified3(cstream, diff,
 					cf1Path, cf2Path,
