@@ -1,8 +1,10 @@
 package svn
 
 /*
-#cgo linux CFLAGS: -I/usr/include/subversion-1
-#cgo linux LDFLAGS: -lsvn_repos-1 -lsvn_subr-1 -lsvn_fs-1 -lsvn_fs_util-1 -lsvn_fs_fs-1 -lsvn_diff-1
+#cgo linux LDFLAGS: -L/usr/local/lib
+//cgo linux CFLAGS: -I/usr/include/subversion-1
+#cgo linux CFLAGS: -I/usr/local/include/subversion-1
+#cgo linux LDFLAGS: -lsvn_delta-1 -lsvn_repos-1 -lsvn_subr-1 -lsvn_fs-1 -lsvn_fs_util-1 -lsvn_fs_fs-1 -lsvn_diff-1
 /// -lsvn_ra_local-1 -lsvn_ra-1 -lsvn_fs_base-1
 
 #cgo darwin CFLAGS: -I/usr/local/opt/apr/include/apr-1
