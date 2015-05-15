@@ -179,10 +179,21 @@ func TestBasic(t *testing.T) {
 		t.Error("Bad prop value for svn:special, got:", value)
 	}
 
-	// for path, value := range ci.ChangedPaths {
-	// 	log.Println(value.Action, path)
-	// 	log.Println(value.Diff)
-	// }
+	props, err := r.PropList("trunk/img", 10)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	if len(props) != 1 {
+		t.Error("number of properties should be 1")
+	}
+
+	testPropKey := "svn:special"
+	testPropVal := "*"
+	if props[testPropKey] != testPropVal {
+		t.Errorf("expected to get:%q, got: %q", testPropVal, props[testPropKey])
+	}
 }
 
 func TestCreateRepo(t *testing.T) {

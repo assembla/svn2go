@@ -161,7 +161,12 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 
 	var revisionRoot *C.svn_fs_root_t
 
-	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); err != nil {
+	if err := C.svn_fs_revision_root(
+		&revisionRoot,
+		r.fs,
+		C.svn_revnum_t(rev),
+		r.pool,
+	); err != nil {
 		return result, makeError(err)
 	}
 
@@ -173,7 +178,13 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 	//                  const char *path,
 	//                  const char *propname,
 	//                  apr_pool_t *pool);
-	if err := C.svn_fs_node_prop(&value, revisionRoot, target, propname, r.pool); err != nil {
+	if err := C.svn_fs_node_prop(
+		&value,
+		revisionRoot,
+		target,
+		propname,
+		r.pool,
+	); err != nil {
 		return "", makeError(err)
 	}
 
@@ -182,6 +193,57 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 	}
 
 	return result, nil
+}
+
+func (r *Repo) PropList(path string, rev int64) (map[string]string, error) {
+	var (
+		revisionRoot *C.svn_fs_root_t
+		props        *C.apr_hash_t
+	)
+
+	target := C.CString(path)
+	defer C.free(unsafe.Pointer(target))
+
+	if err := C.svn_fs_revision_root(
+		&revisionRoot,
+		r.fs,
+		C.svn_revnum_t(rev),
+		r.pool,
+	); err != nil {
+		return nil, makeError(err)
+	}
+
+	defer C.svn_fs_close_root(revisionRoot)
+
+	// svn_error_t*
+	// svn_fs_node_proplist(apr_hash_t **table_p,
+	//                      svn_fs_root_t *root,
+	//                      const char *path,
+	//                      apr_pool_t *pool);
+
+	if err := C.svn_fs_node_proplist(&props,
+		revisionRoot,
+		target,
+		r.pool,
+	); err != nil {
+		return nil, makeError(err)
+	}
+
+	rez := make(map[string]string)
+
+	for hi := C.apr_hash_first(r.pool, props); hi != nil; hi = C.apr_hash_next(hi) {
+		var (
+			key, val unsafe.Pointer
+		)
+
+		C.apr_hash_this(hi, &key, nil, &val)
+		propKey := C.GoString((*C.char)(key))
+		propVal := (*C.svn_string_t)(val)
+
+		rez[propKey] = C.GoString(propVal.data)
+	}
+
+	return rez, nil
 }
 
 func (r *Repo) Close() error {
