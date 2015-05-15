@@ -42,13 +42,13 @@ func TestBasic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(commits) != 2 {
-		t.Error("it should return 2 commits")
+	commits_count := len(commits)
+
+	if commits_count != 2 {
+		t.Error("it should return 2 commits, got", commits_count)
 	}
 
-	for i := 0; i < len(commits); i++ {
-		commit := commits[i]
-
+	for _, commit := range commits {
 		if commit.Author != "lz" {
 			t.Errorf("Wrong author: '%s'", commit.Author)
 		}
@@ -167,6 +167,16 @@ func TestBasic(t *testing.T) {
 
 	if ci.Commit.Log != log {
 		t.Errorf("Bad commit log message, expected '%s', got '%s'", log, ci.Commit.Log)
+	}
+
+	value, err := r.PropGet("trunk/img", 10, "svn:special")
+
+	if err != nil {
+		t.Error("Can not get prop", err.Error())
+	}
+
+	if value != "*" {
+		t.Error("Bad prop value for svn:special, got:", value)
 	}
 
 	// for path, value := range ci.ChangedPaths {
