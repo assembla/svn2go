@@ -2,7 +2,7 @@ package svn
 
 /*
 #cgo LDFLAGS: -lsvn_delta-1 -lsvn_repos-1 -lsvn_subr-1 -lsvn_fs-1
-#cgo LDFLAGS: -lsvn_fs_util-1 -lsvn_fs_fs-1 -lsvn_diff-1 -lsvn_client-1
+#cgo LDFLAGS: -lsvn_fs_util-1 -lsvn_fs_fs-1 -lsvn_diff-1
 
 #cgo LDFLAGS: -L/usr/local/lib -L/usr/local/opt/subversion/lib -L/usr/lib
 #cgo CFLAGS: -I/usr/local/include/subversion-1 -I/usr/local/opt/subversion/include/subversion-1 -I/usr/include/subversion-1
@@ -16,10 +16,8 @@ package svn
 #include <svn_path.h>
 #include <svn_repos.h>
 #include <svn_error.h>
-#include <svn_opt.h>
 #include <svn_dso.h>
 #include <svn_utf.h>
-#include <svn_client.h>
 #include <svn_props.h>
 
 extern svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
@@ -151,42 +149,39 @@ func (r *Repo) GetProperty(name string) (string, error) {
 
 func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) {
 	var (
-		props    *C.apr_hash_t
-		revision C.svn_opt_revision_t
-		ctx      *C.svn_client_ctx_t
-		rev_val  C.svn_opt_revision_value_t
+		value *C.svn_string_t
 	)
+
+	result := ""
 	propname := C.CString(propName)
 	defer C.free(unsafe.Pointer(propname))
 
 	target := C.CString(path)
 	defer C.free(unsafe.Pointer(target))
 
-	rev_val.number = C.svn_revnum_t(rev)
+	var revisionRoot *C.svn_fs_root_t
 
-	revision.kind = C.svn_opt_revision_number
-	revision.value = rev_val
-	recurse := C.svn_boolean_t(false)
+	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); err != nil {
+		return result, makeError(err)
+	}
 
-	if err := C.svn_client_create_context(&ctx, r.pool); err != nil {
+	defer C.svn_fs_close_root(revisionRoot)
+
+	// svn_error_t *
+	// svn_fs_node_prop(svn_string_t **value_p,
+	//                  svn_fs_root_t *root,
+	//                  const char *path,
+	//                  const char *propname,
+	//                  apr_pool_t *pool);
+	if err := C.svn_fs_node_prop(&value, revisionRoot, target, propname, r.pool); err != nil {
 		return "", makeError(err)
 	}
 
-	err := C.svn_client_propget(
-		&props,
-		propname,
-		target,
-		&revision,
-		recurse,
-		ctx,
-		r.pool,
-	)
-
-	if err != nil {
-		return "", makeError(err)
+	if value != nil {
+		result = C.GoString(value.data)
 	}
 
-	return "", nil
+	return result, nil
 }
 
 func (r *Repo) Close() error {
