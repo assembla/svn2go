@@ -64,7 +64,7 @@ func init() {
 	}
 
 	C.svn_utf_initialize2(C.FALSE, C.svn_pool_create_ex(nil, nil))
-	globalPool = C.apr_allocator_owner_get(C.svn_pool_create_allocator(C.FALSE))
+	globalPool = C.apr_allocator_owner_get(C.svn_pool_create_allocator(C.TRUE))
 
 	// from svnlook command
 	/* Initialize the FS library. */
@@ -79,7 +79,7 @@ func init() {
 func Open(path string) (*Repo, error) {
 	r := &Repo{Path: path}
 	r.pool = C.svn_pool_create_ex(globalPool, nil)
-	runtime.SetFinalizer(r, freeCRam)
+	runtime.SetFinalizer(r, (*Repo).Close)
 	cs := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cs))
 
@@ -98,14 +98,21 @@ func Open(path string) (*Repo, error) {
 }
 
 func (r *Repo) LatestRevision() (int64, error) {
-	var rev C.svn_revnum_t
-	err := C.svn_fs_youngest_rev(&rev, r.fs, r.pool)
+	var (
+		rev C.svn_revnum_t
+	)
 
-	if err == nil {
-		return int64(rev), nil
-	} else {
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
+	if err := C.svn_fs_youngest_rev(&rev, r.fs, subPool); err != nil {
 		return 0, makeError(err)
 	}
+
+	revC := int64(rev)
+	// copy data
+	rev64 := revC
+	return rev64, nil
 }
 
 func (r *Repo) CommitInfo(rev int64) (*Commit, error) {
@@ -134,17 +141,24 @@ func (r *Repo) CommitInfo(rev int64) (*Commit, error) {
 }
 
 func (r *Repo) GetProperty(name string) (string, error) {
-	var rawValue *C.svn_string_t
+	var (
+		rawValue *C.svn_string_t
+	)
+
 	propName := C.CString(name)
 	defer C.free(unsafe.Pointer(propName))
 
-	err := C.svn_fs_revision_prop(&rawValue, r.fs, C.svn_revnum_t(r.rev), propName, r.pool)
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
+	err := C.svn_fs_revision_prop(&rawValue, r.fs, C.svn_revnum_t(r.rev), propName, subPool)
 
 	if err != nil {
 		return "", makeError(err)
 	}
 
-	return C.GoString(rawValue.data), nil
+	prop := C.GoString(rawValue.data)
+	return prop, nil
 }
 
 func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) {
@@ -161,16 +175,17 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 
 	var revisionRoot *C.svn_fs_root_t
 
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
 	if err := C.svn_fs_revision_root(
 		&revisionRoot,
 		r.fs,
 		C.svn_revnum_t(rev),
-		r.pool,
+		subPool,
 	); err != nil {
-		return result, makeError(err)
+		return "", makeError(err)
 	}
-
-	defer C.svn_fs_close_root(revisionRoot)
 
 	// svn_error_t *
 	// svn_fs_node_prop(svn_string_t **value_p,
@@ -183,7 +198,7 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 		revisionRoot,
 		target,
 		propname,
-		r.pool,
+		subPool,
 	); err != nil {
 		return "", makeError(err)
 	}
@@ -204,16 +219,17 @@ func (r *Repo) PropList(path string, rev int64) (map[string]string, error) {
 	target := C.CString(path)
 	defer C.free(unsafe.Pointer(target))
 
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
 	if err := C.svn_fs_revision_root(
 		&revisionRoot,
 		r.fs,
 		C.svn_revnum_t(rev),
-		r.pool,
+		subPool,
 	); err != nil {
 		return nil, makeError(err)
 	}
-
-	defer C.svn_fs_close_root(revisionRoot)
 
 	// svn_error_t*
 	// svn_fs_node_proplist(apr_hash_t **table_p,
@@ -224,14 +240,14 @@ func (r *Repo) PropList(path string, rev int64) (map[string]string, error) {
 	if err := C.svn_fs_node_proplist(&props,
 		revisionRoot,
 		target,
-		r.pool,
+		subPool,
 	); err != nil {
 		return nil, makeError(err)
 	}
 
 	rez := make(map[string]string)
 
-	for hi := C.apr_hash_first(r.pool, props); hi != nil; hi = C.apr_hash_next(hi) {
+	for hi := C.apr_hash_first(subPool, props); hi != nil; hi = C.apr_hash_next(hi) {
 		var (
 			key, val unsafe.Pointer
 		)
@@ -252,14 +268,10 @@ func (r *Repo) Close() error {
 	return nil
 }
 
-func freeCRam(repo interface{}) {
-	r := repo.(*Repo)
-	r.Close()
-}
-
 // List repository revisions
 func (r *Repo) Commits(start, end int64) ([]Commit, error) {
-	baton := &CommitCollector{commits: make([]Commit, 0)}
+	subPool := initSubPool(r.pool)
+	baton := NewCommitCollector(subPool)
 
 	err := C.Go_svn_repos_get_logs4(r.repos,
 		nil,
@@ -269,9 +281,9 @@ func (r *Repo) Commits(start, end int64) ([]Commit, error) {
 		C.FALSE, //discover_changed_paths
 		C.FALSE, // strict_node_history
 		C.FALSE, // include_merged_revisions
-		C.GoDefaultLogProps(r.pool),
+		C.GoDefaultLogProps(baton.pool),
 		unsafe.Pointer(baton),
-		r.pool)
+		baton.pool)
 
 	if err != nil {
 		return nil, makeError(err)
@@ -284,13 +296,18 @@ func (r *Repo) Commits(start, end int64) ([]Commit, error) {
 func (r *Repo) History(path string, start, end int64, limit int) ([]Commit, error) {
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
-	baton := &CommitCollector{commits: make([]Commit, 0), limit: limit, r: r}
+
+	subPool := initSubPool(r.pool)
+	baton := NewCommitCollector(subPool)
+
+	baton.limit = limit
+	baton.r = r
 
 	err := C.Go_repos_history(r.fs, cpath, unsafe.Pointer(baton),
 		C.svn_revnum_t(start),
 		C.svn_revnum_t(end),
 		C.TRUE, // cross copies?
-		r.pool)
+		subPool)
 	if err != nil {
 		return nil, makeError(err)
 	}
@@ -302,32 +319,37 @@ func (r *Repo) History(path string, start, end int64, limit int) ([]Commit, erro
 func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 	var revisionRoot *C.svn_fs_root_t
 
-	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); err != nil {
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
+	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); err != nil {
 		return nil, makeError(err)
 	}
-
-	defer C.svn_fs_close_root(revisionRoot)
 
 	var entries *C.apr_hash_t
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
-	if err := C.svn_fs_dir_entries(&entries, revisionRoot, cpath, r.pool); err != nil {
+	if err := C.svn_fs_dir_entries(&entries, revisionRoot, cpath, subPool); err != nil {
 		return nil, makeError(err)
 	}
 
 	rez := make([]DirEntry, C.apr_hash_count(entries))
 	i := 0
 
-	for hi := C.apr_hash_first(r.pool, entries); hi != nil; hi = C.apr_hash_next(hi) {
+	for hi := C.apr_hash_first(subPool, entries); hi != nil; hi = C.apr_hash_next(hi) {
 		var (
 			entry *C.svn_fs_dirent_t
 			val   unsafe.Pointer
+			kind  int
 		)
 
 		C.apr_hash_this(hi, nil, nil, &val)
 		entry = (*C.svn_fs_dirent_t)(val)
-		rez[i] = DirEntry{C.GoString(entry.name), int(entry.kind)}
+		k := int(entry.kind)
+		// copy data
+		kind = k
+		rez[i] = DirEntry{C.GoString(entry.name), kind}
 		i++
 	}
 
@@ -345,7 +367,6 @@ func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
 	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); err != nil {
 		return nil, makeError(err)
 	}
-	defer C.svn_fs_close_root(revisionRoot)
 
 	return r.initSvnStream(revisionRoot, subPool, path)
 }
@@ -356,21 +377,24 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 		revisionRoot *C.svn_fs_root_t
 		rev          C.svn_revnum_t
 	)
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
 
-	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), r.pool); e != nil {
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(baseRev), subPool); e != nil {
 		return -1, makeError(e)
-	} else {
-		defer C.svn_fs_close_root(revisionRoot)
 	}
 
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
-	if err := C.svn_fs_node_created_rev(&rev, revisionRoot, cpath, r.pool); err != nil {
+	if err := C.svn_fs_node_created_rev(&rev, revisionRoot, cpath, subPool); err != nil {
 		return -1, makeError(err)
 	}
 
-	return int64(rev), nil
+	revC := int64(rev)
+	// copy data
+	rev64 := revC
+	return rev64, nil
 }
 
 // Returns file size
@@ -380,20 +404,24 @@ func (r *Repo) FileSize(path string, rev int64) (int64, error) {
 		size         C.svn_filesize_t
 	)
 
-	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); e != nil {
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); e != nil {
 		return -1, makeError(e)
-	} else {
-		defer C.svn_fs_close_root(revisionRoot)
 	}
 
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
-	if e := C.svn_fs_file_length(&size, revisionRoot, cpath, r.pool); e != nil {
+	if e := C.svn_fs_file_length(&size, revisionRoot, cpath, subPool); e != nil {
 		return -1, makeError(e)
 	}
 
-	return int64(size), nil
+	sizeC := int64(size)
+	// copy data
+	size64 := sizeC
+	return size64, nil
 }
 
 // Returns file mime type
@@ -403,19 +431,20 @@ func (r *Repo) MimeType(path string, rev int64) (string, error) {
 		revisionRoot *C.svn_fs_root_t
 	)
 
+	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
 	mime := ""
 
-	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); e != nil {
-		return mime, makeError(e)
-	} else {
-		defer C.svn_fs_close_root(revisionRoot)
+	if e := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); e != nil {
+		return "", makeError(e)
 	}
 
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
-	if err := C.FileMimeType(&mimetype, revisionRoot, cpath, r.pool); err != nil {
-		return mime, makeError(err)
+	if err := C.FileMimeType(&mimetype, revisionRoot, cpath, subPool); err != nil {
+		return "", makeError(err)
 	}
 
 	if mimetype != nil {

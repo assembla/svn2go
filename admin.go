@@ -22,7 +22,8 @@ func Create(path string) error {
 
 	cstr := C.CString(path)
 	defer C.free(unsafe.Pointer(cstr))
-	pool := C.svn_pool_create_ex(globalPool, nil)
+
+	pool := initSubPool(globalPool)
 	defer C.svn_pool_destroy(pool)
 
 	var fsConfig *C.apr_hash_t = C.apr_hash_make(pool)

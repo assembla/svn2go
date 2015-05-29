@@ -29,21 +29,13 @@ func (s *SvnStream) Read(dest []byte) (n int, err error) {
 
 	if c == 0 {
 		return 0, io.EOF
-	} else {
-		return int(c), nil
 	}
+	return int(c), nil
 }
 
 // Closes svn stream
 func (s *SvnStream) Close() error {
 	runtime.SetFinalizer(s, nil)
-
-	err := C.svn_stream_close(s.io)
 	C.svn_pool_destroy(s.pool)
-
-	if err != nil {
-		return makeError(err)
-	}
-
 	return nil
 }

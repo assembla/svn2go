@@ -3,8 +3,11 @@ package svn
 /*
 #include <svn_types.h>
 #include <svn_repos.h>
+#include <svn_pools.h>
 */
 import "C"
+
+import "runtime"
 
 type Commit struct {
 	Rev    int64 // C.svn_revnum_t
@@ -34,8 +37,20 @@ type DirEntry struct {
 	Kind int
 }
 
+func NewCommitCollector(pool *C.apr_pool_t) *CommitCollector {
+	c := &CommitCollector{commits: make([]Commit, 0), pool: pool}
+	runtime.SetFinalizer(c, (*CommitCollector).Free)
+	return c
+}
+
 type CommitCollector struct {
 	commits []Commit
 	limit   int
 	r       *Repo
+	pool    *C.apr_pool_t
+}
+
+func (c *CommitCollector) Free() {
+	runtime.SetFinalizer(c, nil)
+	C.svn_pool_destroy(c.pool)
 }
