@@ -17,11 +17,11 @@ extern char * defaultEncoding();
 extern svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
 */
 import "C"
+
 import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	//"log"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -292,16 +292,15 @@ func (c *collector) dumpFile(fsRoot *C.svn_fs_root_t, path string) (string, erro
 	}
 
 	if fsRoot != nil {
-		var stream *C.svn_stream_t
-		cpath := C.CString(path) // convert to C string
-		defer C.free(unsafe.Pointer(cpath))
-
-		if err := C.svn_fs_file_contents(&stream, fsRoot, cpath, c.r.pool); err != nil {
-			return "", makeError(err)
+		subPool := initSubPool(c.r.pool)
+		svnStream, err := c.r.initSvnStream(fsRoot, subPool, path)
+		if err != nil {
+			return "", err
 		}
 
-		_, err = io.Copy(tmp, &SvnStream{stream})
-		//log.Println("Dumped", n, "bytes")
+		defer svnStream.Close()
+
+		_, err = io.Copy(tmp, svnStream)
 
 		if err != nil {
 			return "", fmt.Errorf("Can not dump %s:", path, err)

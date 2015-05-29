@@ -337,24 +337,17 @@ func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 // Returns file as ReaderCloser stream
 func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
 	var (
-		stream       *C.svn_stream_t
 		revisionRoot *C.svn_fs_root_t
 	)
 
-	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), r.pool); err != nil {
+	subPool := initSubPool(r.pool)
+
+	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); err != nil {
 		return nil, makeError(err)
 	}
-
 	defer C.svn_fs_close_root(revisionRoot)
 
-	cpath := C.CString(path) // convert to C string
-	defer C.free(unsafe.Pointer(cpath))
-
-	if err := C.svn_fs_file_contents(&stream, revisionRoot, cpath, r.pool); err != nil {
-		return nil, makeError(err)
-	}
-
-	return &SvnStream{stream}, nil
+	return r.initSvnStream(revisionRoot, subPool, path)
 }
 
 // Returns latest revision for the path
@@ -430,4 +423,26 @@ func (r *Repo) MimeType(path string, rev int64) (string, error) {
 	}
 
 	return mime, nil
+}
+
+func (r *Repo) initSvnStream(fs *C.svn_fs_root_t, pool *C.apr_pool_t, path string) (*SvnStream, error) {
+	var (
+		stream *C.svn_stream_t
+	)
+
+	cpath := C.CString(path) // convert to C string
+	defer C.free(unsafe.Pointer(cpath))
+
+	if err := C.svn_fs_file_contents(&stream, fs, cpath, pool); err != nil {
+		return nil, makeError(err)
+	}
+
+	svnStream := &SvnStream{io: stream, pool: pool}
+	runtime.SetFinalizer(svnStream, (*SvnStream).Close)
+
+	return svnStream, nil
+}
+
+func initSubPool(pool *C.apr_pool_t) *C.apr_pool_t {
+	return C.svn_pool_create_ex(pool, nil)
 }
