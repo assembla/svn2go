@@ -109,10 +109,7 @@ func (r *Repo) LatestRevision() (int64, error) {
 		return 0, makeError(err)
 	}
 
-	revC := int64(rev)
-	// copy data
-	rev64 := revC
-	return rev64, nil
+	return int64(rev), nil
 }
 
 func (r *Repo) CommitInfo(rev int64) (*Commit, error) {
@@ -341,15 +338,11 @@ func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 		var (
 			entry *C.svn_fs_dirent_t
 			val   unsafe.Pointer
-			kind  int
 		)
 
 		C.apr_hash_this(hi, nil, nil, &val)
 		entry = (*C.svn_fs_dirent_t)(val)
-		k := int(entry.kind)
-		// copy data
-		kind = k
-		rez[i] = DirEntry{C.GoString(entry.name), kind}
+		rez[i] = DirEntry{Name: C.GoString(entry.name), Kind: int(entry.kind)}
 		i++
 	}
 
@@ -391,10 +384,7 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 		return -1, makeError(err)
 	}
 
-	revC := int64(rev)
-	// copy data
-	rev64 := revC
-	return rev64, nil
+	return int64(rev), nil
 }
 
 // Returns file size
@@ -418,10 +408,7 @@ func (r *Repo) FileSize(path string, rev int64) (int64, error) {
 		return -1, makeError(e)
 	}
 
-	sizeC := int64(size)
-	// copy data
-	size64 := sizeC
-	return size64, nil
+	return int64(size), nil
 }
 
 // Returns file mime type
