@@ -13,17 +13,18 @@ import (
 	"unsafe"
 )
 
+// Stream is used for wrapping SVN stream
 // TODO svn stream supports seek, maybe we can use it
-type SvnStream struct {
+type Stream struct {
 	io   *C.svn_stream_t
 	pool *C.apr_pool_t
 }
 
 // Read bytes from svn stream
-func (s *SvnStream) Read(dest []byte) (n int, err error) {
+func (s *Stream) Read(dest []byte) (n int, err error) {
 	c := C.apr_size_t(len(dest))
 
-	if err := C.svn_stream_read(s.io, (*C.char)(unsafe.Pointer(&dest[0])), &c); err != nil {
+	if err := C.svn_stream_read_full(s.io, (*C.char)(unsafe.Pointer(&dest[0])), &c); err != nil {
 		return int(c), makeError(err)
 	}
 
@@ -33,8 +34,8 @@ func (s *SvnStream) Read(dest []byte) (n int, err error) {
 	return int(c), nil
 }
 
-// Closes svn stream
-func (s *SvnStream) Close() error {
+// Close closes stream
+func (s *Stream) Close() error {
 	runtime.SetFinalizer(s, nil)
 	C.svn_pool_destroy(s.pool)
 	return nil

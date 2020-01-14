@@ -27,12 +27,13 @@ import (
 	"unsafe"
 )
 
+// ChangesetInfo is used to keep commit info
 type ChangesetInfo struct {
 	Commit       *Commit
 	ChangedPaths map[string]*ChangedEntry
 }
 
-// Returns changeset details: author, date, log, change files, dirs, diff of files and properties
+// Changeset returns changeset details: author, date, log, change files, dirs, diff of files and properties
 func (r *Repo) Changeset(rev int64, diffIgnoreSpace bool) (*ChangesetInfo, error) {
 	if rev == 0 {
 		return nil, fmt.Errorf("Invalid revision: %d", rev)
@@ -59,15 +60,13 @@ func (r *Repo) Changeset(rev int64, diffIgnoreSpace bool) (*ChangesetInfo, error
 
 	if e := C.svn_fs_revision_root(&c.baseRoot, r.fs, C.svn_revnum_t(rev)-1, pool); e != nil {
 		return nil, makeError(e)
-	} else {
-		defer C.svn_fs_close_root(c.baseRoot)
 	}
+	defer C.svn_fs_close_root(c.baseRoot)
 
 	if e := C.svn_fs_revision_root(&c.root, r.fs, C.svn_revnum_t(rev), pool); e != nil {
 		return nil, makeError(e)
-	} else {
-		defer C.svn_fs_close_root(c.root)
 	}
+	defer C.svn_fs_close_root(c.root)
 
 	// TODO improvement: rewrite editor #open_file #open_directory to limit entries count that we will process.
 	// We had cases with crazy repos with 16k modifications
@@ -94,6 +93,7 @@ func (r *Repo) Changeset(rev int64, diffIgnoreSpace bool) (*ChangesetInfo, error
 	return rez, nil
 }
 
+// ChangedEntry is used for storing a changed entry
 type ChangedEntry struct {
 	Kind     int    // svn node kind
 	Action   string // file operation A- added,R-changed,D-deleted
@@ -107,11 +107,6 @@ type collector struct {
 	r               *Repo
 	changes         map[string]*ChangedEntry
 	diffIgnoreSpace bool
-}
-
-// Used to collect file diff
-type stringBuffer struct {
-	buf *string
 }
 
 // Collect changed paths
@@ -173,12 +168,14 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 			}
 		}
 
-		stream := &stringBuffer{&entry.Diff} // Create string Writer
+		var buf *C.svn_stringbuf_t
+		cdiff := C.CString(entry.Diff)
+		buf = C.svn_stringbuf_create(cdiff, c.r.pool)
 
 		if binaryA || binaryB {
 			entry.IsBinary = true
 			header += "(Binary files differ)\n\n"
-			stream.Write([]byte(header))
+			C.svn_stringbuf_appendcstr(buf, C.CString(header))
 		} else {
 			// TODO check file size and do not dump files bigger than 10Mb for example
 			rootA = c.baseRoot
@@ -223,7 +220,7 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 			}
 
 			if C.svn_diff_contains_diffs(diff) == C.TRUE {
-				stream.Write([]byte(header))
+				C.svn_stringbuf_appendcstr(buf, C.CString(header))
 
 				//log.Println("Has diff")
 				if rootA != nil {
@@ -239,16 +236,29 @@ func (c *collector) collectChangedPaths(node *C.svn_repos_node_t, path string) e
 				defer C.free(unsafe.Pointer(clabelA))
 				defer C.free(unsafe.Pointer(clabelB))
 
-				cstream := C.CreateWriterStream(unsafe.Pointer(stream), c.r.pool)
+				cstream := C.CreateWriterStream(unsafe.Pointer(buf), c.r.pool)
 
-				if err := C.svn_diff_file_output_unified3(cstream, diff,
-					cf1Path, cf2Path,
-					clabelA, clabelB,
-					C.defaultEncoding(), nil, C.FALSE, c.r.pool); err != nil {
+				if err := C.svn_diff_file_output_unified4(
+					cstream,
+					diff,
+					cf1Path,
+					cf2Path,
+					clabelA,
+					clabelB,
+					C.defaultEncoding(),
+					nil,
+					C.FALSE,
+					-1,
+					nil,
+					nil,
+					c.r.pool,
+				); err != nil {
 					return makeError(err)
 				}
 			}
 		} // end binary check
+
+		entry.Diff = C.GoStringN(buf.data, (C.int)(buf.len))
 	} // end file diff
 
 	if node.prop_mod == C.TRUE {
@@ -303,20 +313,15 @@ func (c *collector) dumpFile(fsRoot *C.svn_fs_root_t, path string) (string, erro
 		_, err = io.Copy(tmp, svnStream)
 
 		if err != nil {
-			return "", fmt.Errorf("Can not dump %s:", path, err)
+			return "", fmt.Errorf("Can not dump %s: %s", path, err.Error())
 		}
 	}
 
 	if err = tmp.Close(); err != nil {
-		return "", fmt.Errorf("Can not close temp file %s:", tmp.Name(), err)
+		return "", fmt.Errorf("Can not close temp file %s: %s", tmp.Name(), err.Error())
 	}
 
 	return tmp.Name(), nil
-}
-
-func (s *stringBuffer) Write(p []byte) (int, error) {
-	*s.buf += string(p)
-	return len(p), nil
 }
 
 func (c *collector) isBinary(fsRoot *C.svn_fs_root_t, path *C.char) (bool, error) {

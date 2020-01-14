@@ -23,18 +23,17 @@ package svn
 extern svn_error_t * FileMimeType(svn_string_t **mimetype, svn_fs_root_t *root, const char *path, apr_pool_t *pool);
 extern apr_array_header_t * GoCreateAprArrayForPath(const char *path, apr_pool_t *pool);
 extern apr_array_header_t * GoDefaultLogProps(apr_pool_t *pool);
-extern svn_error_t * Go_svn_repos_get_logs4(svn_repos_t *repos,
+extern svn_error_t * Go_svn_repos_get_logs5(svn_repos_t *repos,
                     const apr_array_header_t *paths,
                     svn_revnum_t start,
                     svn_revnum_t end,
                     int limit,
-                    svn_boolean_t discover_changed_paths,
                     svn_boolean_t strict_node_history,
                     svn_boolean_t include_merged_revisions,
                     const apr_array_header_t *revprops,
                     void *receiver_baton,
                     apr_pool_t *pool);
-extern svn_error_t * Go_repos_history(svn_fs_t *fs,
+extern svn_error_t * Go_svn_repos_history2(svn_fs_t *fs,
                    const char *path,
                    void *history_baton,
                    svn_revnum_t start,
@@ -75,7 +74,7 @@ func init() {
 	}
 }
 
-// Opens svn repository
+// Open opens SVN repository
 func Open(path string) (*Repo, error) {
 	r := &Repo{Path: path}
 	r.pool = C.svn_pool_create_ex(globalPool, nil)
@@ -85,7 +84,10 @@ func Open(path string) (*Repo, error) {
 
 	p := C.svn_dirent_internal_style(cs, r.pool)
 
-	err := C.svn_repos_open2(&r.repos, p, nil, r.pool)
+	scratchPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(scratchPool)
+
+	err := C.svn_repos_open3(&r.repos, p, nil, r.pool, scratchPool)
 
 	if err != nil {
 		r.Close() // free pool
@@ -97,6 +99,7 @@ func Open(path string) (*Repo, error) {
 	return r, nil
 }
 
+// LatestRevision returns the latest revision in a given repo
 func (r *Repo) LatestRevision() (int64, error) {
 	var (
 		rev C.svn_revnum_t
@@ -112,6 +115,7 @@ func (r *Repo) LatestRevision() (int64, error) {
 	return int64(rev), nil
 }
 
+// CommitInfo returns info about a given commit
 func (r *Repo) CommitInfo(rev int64) (*Commit, error) {
 	r.rev = rev
 	c := &Commit{Rev: rev}
@@ -137,6 +141,7 @@ func (r *Repo) CommitInfo(rev int64) (*Commit, error) {
 	return c, nil
 }
 
+// GetProperty returns the property value for a given prop name
 func (r *Repo) GetProperty(name string) (string, error) {
 	var (
 		rawValue *C.svn_string_t
@@ -148,19 +153,29 @@ func (r *Repo) GetProperty(name string) (string, error) {
 	subPool := initSubPool(r.pool)
 	defer C.svn_pool_destroy(subPool)
 
-	err := C.svn_fs_revision_prop(&rawValue, r.fs, C.svn_revnum_t(r.rev), propName, subPool)
+	scratchPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(scratchPool)
 
-	if err != nil {
+	if err := C.svn_fs_revision_prop2(
+		&rawValue,
+		r.fs,
+		C.svn_revnum_t(r.rev),
+		propName,
+		C.TRUE,
+		subPool,
+		scratchPool,
+	); err != nil {
 		return "", makeError(err)
 	}
 
-	prop := C.GoString(rawValue.data)
-	return prop, nil
+	return C.GoString(rawValue.data), nil
 }
 
+// PropGet returns the prop value for a given prop in a given path in a given rev
 func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) {
 	var (
 		value *C.svn_string_t
+		revisionRoot *C.svn_fs_root_t
 	)
 
 	result := ""
@@ -169,8 +184,6 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 
 	target := C.CString(path)
 	defer C.free(unsafe.Pointer(target))
-
-	var revisionRoot *C.svn_fs_root_t
 
 	subPool := initSubPool(r.pool)
 	defer C.svn_pool_destroy(subPool)
@@ -207,6 +220,7 @@ func (r *Repo) PropGet(path string, rev int64, propName string) (string, error) 
 	return result, nil
 }
 
+// PropList returns the list of properties for a given path in a given rev
 func (r *Repo) PropList(path string, rev int64) (map[string]string, error) {
 	var (
 		revisionRoot *C.svn_fs_root_t
@@ -259,60 +273,75 @@ func (r *Repo) PropList(path string, rev int64) (map[string]string, error) {
 	return rez, nil
 }
 
+// Close closes the repo
 func (r *Repo) Close() error {
 	C.svn_pool_destroy(r.pool)
 	runtime.SetFinalizer(r, nil)
 	return nil
 }
 
-// List repository revisions
+// Commits returns a list of repository revisions
 func (r *Repo) Commits(start, end int64) ([]Commit, error) {
 	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
 	baton := NewCommitCollector(subPool)
 
-	err := C.Go_svn_repos_get_logs4(r.repos,
+	if err := C.Go_svn_repos_get_logs5(
+		r.repos,
 		nil,
 		C.svn_revnum_t(start),
 		C.svn_revnum_t(end),
 		20,      // limit
-		C.FALSE, //discover_changed_paths
 		C.FALSE, // strict_node_history
 		C.FALSE, // include_merged_revisions
 		C.GoDefaultLogProps(baton.pool),
 		unsafe.Pointer(baton),
-		baton.pool)
-
-	if err != nil {
+		baton.pool,
+	); err != nil {
 		return nil, makeError(err)
 	}
 
 	return baton.commits, nil
 }
 
-// Returns commits that changed @path
+// History returns commits that changed @path
 func (r *Repo) History(path string, start, end int64, limit int) ([]Commit, error) {
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
 	subPool := initSubPool(r.pool)
+	defer C.svn_pool_destroy(subPool)
+
 	baton := NewCommitCollector(subPool)
-
 	baton.limit = limit
-	baton.r = r
 
-	err := C.Go_repos_history(r.fs, cpath, unsafe.Pointer(baton),
+	if err := C.Go_svn_repos_history2(
+		r.fs,
+		cpath,
+		unsafe.Pointer(baton),
 		C.svn_revnum_t(start),
 		C.svn_revnum_t(end),
 		C.TRUE, // cross copies?
-		subPool)
-	if err != nil {
+		subPool,
+	); err != nil {
 		return nil, makeError(err)
 	}
 
-	return baton.commits, nil
+	commits := make([]Commit, 0)
+	for _, rev := range baton.revisions {
+		commit, err := r.CommitInfo(rev)
+		if err != nil {
+			return nil, err
+		}
+
+		commits = append(commits, *commit)
+	}
+
+	return commits, nil
 }
 
-// Return an array with directory entries
+// Tree returns an array with directory entries
 func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 	var revisionRoot *C.svn_fs_root_t
 
@@ -349,12 +378,9 @@ func (r *Repo) Tree(path string, rev int64) ([]DirEntry, error) {
 	return rez, nil
 }
 
-// Returns file as ReaderCloser stream
+// FileContent returns file as ReaderCloser stream
 func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
-	var (
-		revisionRoot *C.svn_fs_root_t
-	)
-
+	var revisionRoot *C.svn_fs_root_t
 	subPool := initSubPool(r.pool)
 
 	if err := C.svn_fs_revision_root(&revisionRoot, r.fs, C.svn_revnum_t(rev), subPool); err != nil {
@@ -364,7 +390,7 @@ func (r *Repo) FileContent(path string, rev int64) (io.ReadCloser, error) {
 	return r.initSvnStream(revisionRoot, subPool, path)
 }
 
-// Returns latest revision for the path
+// LastPathRev returns the latest revision for the path
 func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 	var (
 		revisionRoot *C.svn_fs_root_t
@@ -387,7 +413,7 @@ func (r *Repo) LastPathRev(path string, baseRev int64) (int64, error) {
 	return int64(rev), nil
 }
 
-// Returns file size
+// FileSize returns path size in the given rev
 func (r *Repo) FileSize(path string, rev int64) (int64, error) {
 	var (
 		revisionRoot *C.svn_fs_root_t
@@ -411,7 +437,7 @@ func (r *Repo) FileSize(path string, rev int64) (int64, error) {
 	return int64(size), nil
 }
 
-// Returns file mime type
+// MimeType returns path mime type
 func (r *Repo) MimeType(path string, rev int64) (string, error) {
 	var (
 		mimetype     *C.svn_string_t
@@ -441,22 +467,20 @@ func (r *Repo) MimeType(path string, rev int64) (string, error) {
 	return mime, nil
 }
 
-func (r *Repo) initSvnStream(fs *C.svn_fs_root_t, pool *C.apr_pool_t, path string) (*SvnStream, error) {
-	var (
-		stream *C.svn_stream_t
-	)
+func (r *Repo) initSvnStream(fs *C.svn_fs_root_t, pool *C.apr_pool_t, path string) (*Stream, error) {
+	var svnStream *C.svn_stream_t
 
 	cpath := C.CString(path) // convert to C string
 	defer C.free(unsafe.Pointer(cpath))
 
-	if err := C.svn_fs_file_contents(&stream, fs, cpath, pool); err != nil {
+	if err := C.svn_fs_file_contents(&svnStream, fs, cpath, pool); err != nil {
 		return nil, makeError(err)
 	}
 
-	svnStream := &SvnStream{io: stream, pool: pool}
-	runtime.SetFinalizer(svnStream, (*SvnStream).Close)
+	stream := &Stream{io: svnStream, pool: pool}
+	runtime.SetFinalizer(stream, (*Stream).Close)
 
-	return svnStream, nil
+	return stream, nil
 }
 
 func initSubPool(pool *C.apr_pool_t) *C.apr_pool_t {

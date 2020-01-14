@@ -7,6 +7,7 @@ import (
 	"fmt"
 )
 
+// Error is used for wrapping SVN errors
 type Error struct {
 	err *C.svn_error_t
 }

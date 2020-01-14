@@ -11,7 +11,7 @@ func TestBasic(t *testing.T) {
 	r, err := Open("testdata/sample")
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to open repo: %s", err.Error())
 	}
 
 	defer r.Close()
@@ -19,17 +19,17 @@ func TestBasic(t *testing.T) {
 	rev, err := r.LatestRevision()
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get latest revision: %s", err.Error())
 	}
 
 	if rev <= 0 {
-		t.Errorf("Latest revision should be >= 0, but it is %d", rev)
+		t.Errorf("Expected latest revision to be positive, got %d", rev)
 	}
 
 	c, err := r.CommitInfo(1)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get commit info for the first revision: %s", err.Error())
 	}
 
 	if c.Author != "lz" {
@@ -39,13 +39,13 @@ func TestBasic(t *testing.T) {
 	commits, err := r.Commits(1, 2)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get commits: %s", err.Error())
 	}
 
-	commits_count := len(commits)
+	commitsCount := len(commits)
 
-	if commits_count != 2 {
-		t.Error("it should return 2 commits, got", commits_count)
+	if commitsCount != 2 {
+		t.Errorf("Expected 2 commits, got %d", commitsCount)
 	}
 
 	for _, commit := range commits {
@@ -57,69 +57,69 @@ func TestBasic(t *testing.T) {
 	rev, err = r.LastPathRev("trunk/Makefile", 6)
 
 	if err != nil {
-		t.Error("failed to get rev", err)
+		t.Errorf("Failed to get rev: %s", err.Error())
 	} else if rev != 5 {
-		t.Error("Extected rev 5, got", rev)
+		t.Errorf("Expected rev 5, got %d", rev)
 	}
 
 	commits, err = r.History("trunk", 0, rev, 2)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get history: %s", err.Error())
 	}
 
 	if len(commits) != 2 {
-		t.Error("#History should return 2 commits")
+		t.Errorf("Expected history call to return 2 commits, got %d", len(commits))
 	}
 
 	entries, err := r.Tree("trunk", 5)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get tree for trunk: %s", err.Error())
 	}
 
 	if len(entries) != 2 {
-		t.Error("Only two entries should be in trunk/ folder at rev 5")
+		t.Errorf("Expected the number of entries in trunk/ folder at rev 5 to equal 2, got %d", len(entries))
 	}
 
 	if size, err := r.FileSize("trunk/Makefile", 6); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get file size: %s", err.Error())
 	} else {
 		exp := int64(1279)
 
 		if size != exp {
-			t.Error("Wrong file size, expected", exp, "got", size)
+			t.Errorf("Wrong file size, expected %d, got %d", exp, size)
 		}
 	}
 
 	mimeExp := "application/octet-stream"
 
 	if mime, err := r.MimeType("trunk/images/play.png", 7); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get mime type: %s", err.Error())
 	} else {
 		if mimeExp != mime {
-			t.Error("Wrong file mime type, expected", mimeExp, "got", mime)
+			t.Errorf("Wrong file mime type, expected %s, got %s", mimeExp, mime)
 		}
 	}
 
 	if reader, err := r.FileContent("trunk/TODO", 6); err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to read file content: %s", err.Error())
 	} else {
-		data, e := ioutil.ReadAll(reader)
+		data, err := ioutil.ReadAll(reader)
 
-		if e != nil {
-			t.Fatal(e)
+		if err != nil {
+			t.Fatalf("Failed to read from reader: %s", err.Error())
 		}
 
 		if string(data) != "Readme\n" {
-			t.Error("Wrong trunk/TODO content", string(data))
+			t.Errorf("Wrong trunk/TODO content: %s", string(data))
 		}
 	}
 
 	ci, err := r.Changeset(5, false)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Errorf("Failed to get changeset: %s", err.Error())
 	}
 
 	diff := `Index: trunk/Makefile
@@ -133,13 +133,13 @@ func TestBasic(t *testing.T) {
  export LIBGIT_SRC_PATH := $(CURDIR)/vendor/libgit2
 `
 	if ci.ChangedPaths["trunk/Makefile"].Diff != diff {
-		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/Makefile"].Diff, diff)
+		t.Errorf("Wrong file diff:\n%s\n\nExpected:\n%s", ci.ChangedPaths["trunk/Makefile"].Diff, diff)
 	}
 
 	ci, err = r.Changeset(6, false)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get changeset 6: %s", err.Error())
 	}
 
 	diff = `Index: trunk/TODO
@@ -150,13 +150,13 @@ func TestBasic(t *testing.T) {
 +Readme
 `
 	if ci.ChangedPaths["trunk/TODO"].Diff != diff {
-		t.Errorf("Wrong file diff:\n%s\nExpected:\n%s", ci.ChangedPaths["trunk/TODO"].Diff, diff)
+		t.Errorf("Wrong file diff:\n%s\n\nExpected:\n%s", ci.ChangedPaths["trunk/TODO"].Diff, diff)
 	}
 
 	ci, err = r.Changeset(9, true)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to get changeset 9: %s", err.Error())
 	}
 
 	if len(ci.ChangedPaths["trunk/Makefile"].Diff) > 0 {
@@ -172,21 +172,21 @@ func TestBasic(t *testing.T) {
 	value, err := r.PropGet("trunk/img", 10, "svn:special")
 
 	if err != nil {
-		t.Error("Can not get prop", err.Error())
+		t.Errorf("Can not get prop: %s", err.Error())
 	}
 
 	if value != "*" {
-		t.Error("Bad prop value for svn:special, got:", value)
+		t.Errorf("Bad prop value for svn:special, got: %s", value)
 	}
 
 	props, err := r.PropList("trunk/img", 10)
 
 	if err != nil {
-		t.Error(err)
+		t.Errorf("Failed to get prop list: %s", err.Error())
 	}
 
 	if len(props) != 1 {
-		t.Error("number of properties should be 1")
+		t.Errorf("number of properties should be 1, got %d", len(props))
 	}
 
 	testPropKey := "svn:special"
@@ -202,6 +202,6 @@ func TestCreateRepo(t *testing.T) {
 	err := Create(path)
 
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Failed to create repo: %s", err.Error())
 	}
 }

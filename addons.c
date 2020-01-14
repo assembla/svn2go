@@ -6,12 +6,11 @@
 #include "_cgo_export.h"
 
 svn_error_t *
-Go_svn_repos_get_logs4(svn_repos_t *repos,
+Go_svn_repos_get_logs5(svn_repos_t *repos,
                     const apr_array_header_t *paths,
                     svn_revnum_t start,
                     svn_revnum_t end,
                     int limit,
-                    svn_boolean_t discover_changed_paths,
                     svn_boolean_t strict_node_history,
                     svn_boolean_t include_merged_revisions,
                     const apr_array_header_t *revprops,
@@ -20,31 +19,31 @@ Go_svn_repos_get_logs4(svn_repos_t *repos,
                     svn_log_entry_receiver_t receiver,*/
                     void *receiver_baton,
                     apr_pool_t *pool) {
-	return svn_repos_get_logs4(repos,
+	return svn_repos_get_logs5(repos,
                     paths,
                     start,
                     end,
                     limit,
-                    discover_changed_paths,
                     strict_node_history,
                     include_merged_revisions,
                     revprops,
                     NULL,
                     NULL,
-                    (svn_log_entry_receiver_t)&LogEntryReceiverCallback,
+                    NULL,
+                    NULL,
+                    (svn_repos_log_entry_receiver_t)&LogEntryReceiverCallback,
                     receiver_baton,
                     pool);
 }
 
 svn_error_t *
-Go_repos_history(svn_fs_t *fs,
+Go_svn_repos_history2(svn_fs_t *fs,
                    const char *path,
                    void *history_baton,
                    svn_revnum_t start,
                    svn_revnum_t end,
                    svn_boolean_t cross_copies,
                    apr_pool_t *pool) {
-
     return svn_repos_history2(fs,
                    path,
                    (svn_repos_history_func_t)&HistoryReceiverCallback,
