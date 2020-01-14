@@ -48,13 +48,3 @@ func HistoryReceiverCallback(_obj unsafe.Pointer, path *C.char, revision C.svn_r
 
 	return nil
 }
-
-// StreamWrite implements svn_stream_write callback
-//export StreamWrite
-func StreamWrite(_obj unsafe.Pointer, data *C.char, len *C.apr_size_t) *C.svn_error_t {
-	out := (*C.svn_stringbuf_t)(_obj)
-
-	C.svn_stringbuf_appendbytes(out, data, *len)
-
-	return nil;
-}

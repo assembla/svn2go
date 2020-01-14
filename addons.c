@@ -106,6 +106,13 @@ char * PropAuthor(apr_hash_t *hash) {
 	return (char*)svn_hash_gets(hash, SVN_PROP_REVISION_AUTHOR);
 }
 
+svn_error_t * StreamWrite(void* baton, const char* data, apr_size_t* len) {
+  svn_stringbuf_t *buf = (svn_stringbuf_t*)baton;
+  svn_stringbuf_appendbytes(buf, data, *len);
+
+  return SVN_NO_ERROR;
+}
+
 svn_stream_t * CreateWriterStream(void *baton, apr_pool_t *pool) {
   svn_stream_t * rez = svn_stream_create(baton, pool);
   svn_stream_set_write(rez, &StreamWrite);
